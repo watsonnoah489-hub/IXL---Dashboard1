@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sigma Town — JS Edition</title>
+<meta name="description" content="Sigma Town JS Edition">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23e11d2e'/><text x='50' y='72' font-size='62' font-family='Arial' font-weight='bold' fill='white' text-anchor='middle'>Σ</text></svg>">
+<style>
+  :root{
+    --red:#e11d2e;
+    --red-lite:#ff3b4e;
+    --red-dark:#a30f1c;
+    --bg:#0d0b0c;
+    --card:#171314;
+    --line:#2a2224;
+    --text:#f4f1f1;
+    --muted:#a08f92;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:var(--bg);color:var(--text);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+    display:flex;flex-direction:column;min-height:100%;
+    -webkit-font-smoothing:antialiased;
+  }
+  body.playing{overflow:hidden}
+
+  /* ---------- header ---------- */
+  header{
+    position:sticky;top:0;z-index:20;
+    display:flex;align-items:center;
+    padding:12px 18px;
+    background:linear-gradient(180deg,#1a0d10,#0d0b0c);
+    border-bottom:2px solid var(--red);
+  }
+  .brand{display:flex;align-items:center;gap:12px;min-width:0}
+  .logo{
+    width:44px;height:44px;border-radius:12px;flex:0 0 auto;
+    display:grid;place-items:center;
+    font:900 24px/1 system-ui;color:#fff;
+    background:linear-gradient(145deg,var(--red-lite),var(--red-dark));
+    box-shadow:0 4px 14px rgba(225,29,46,.45);
+  }
+  .brand h1{font-size:18px;margin:0;letter-spacing:.4px;white-space:nowrap}
+  .brand h1 span{color:var(--red-lite)}
+
+  /* ---------- grid ---------- */
+  main{
+    flex:1;
+    padding:20px;
+    display:grid;
+    grid-template-columns:repeat(auto-fill,minmax(190px,1fr));
+    gap:16px;
+    align-content:start;
+  }
+  .card{
+    position:relative;
+    display:block;
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:14px;
+    overflow:hidden;
+    cursor:pointer;
+    content-visibility:auto;              /* skips offscreen work = less lag */
+    contain-intrinsic-size:210px;
+    transition:transform .15s ease,border-color .15s ease;
+  }
+  .card:hover{transform:translateY(-3px);border-color:var(--red)}
+  .card:focus-visible{outline:2px solid var(--red);outline-offset:2px}
+
+  .thumb{position:relative;aspect-ratio:1/1;background:#221a1c}
+  .thumb img{
+    width:100%;height:100%;object-fit:cover;display:block;
+    user-select:none;-webkit-user-drag:none;
+  }
+
+  .star{
+    position:absolute;top:8px;right:8px;
+    width:34px;height:34px;border:0;border-radius:50%;cursor:pointer;
+    display:grid;place-items:center;
+    font-size:17px;line-height:1;
+    color:#fff;background:rgba(0,0,0,.55);
+    transition:transform .12s ease,color .12s ease,background .12s ease;
+  }
+  .star:hover{transform:scale(1.12)}
+  .star.on{color:#ffcc00;background:rgba(0,0,0,.78)}
+
+  /* ---------- player ---------- */
+  #player{position:fixed;inset:0;z-index:50;display:flex;flex-direction:column;background:#000}
+  #player[hidden]{display:none}
+  .bar{
+    flex:0 0 auto;display:flex;align-items:center;gap:12px;
+    padding:8px 14px;background:#120d0e;border-bottom:1px solid var(--line);
+  }
+  #back{
+    border:1px solid var(--line);background:#1c1517;color:var(--text);
+    padding:8px 14px;border-radius:10px;cursor:pointer;font-size:14px;
+    transition:border-color .15s,color .15s;
+  }
+  #back:hover{border-color:var(--red);color:#ff6b78}
+
+  .frame-wrap{position:relative;flex:1;min-height:0}
+  .frame-host{position:absolute;inset:0}
+  .frame-host iframe{display:block;width:100%;height:100%;border:0}
+
+  /* the "ST" marking */
+  .stmark{
+    position:absolute;right:12px;bottom:12px;z-index:5;
+    padding:6px 12px;border-radius:10px;
+    font:800 14px/1 system-ui;letter-spacing:2px;color:#fff;
+    background:linear-gradient(145deg,var(--red-lite),var(--red-dark));
+    box-shadow:0 6px 18px rgba(0,0,0,.55);
+    pointer-events:none;user-select:none;opacity:.92;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="logo">Σ</div>
+    <div>
+      <h1>Sigma Town <span>JS Edition</span></h1>
+    </div>
+  </div>
+</header>
+
+<main id="grid"></main>
+
+<div id="player" hidden>
+  <div class="bar">
+    <button id="back" type="button">← Back</button>
+  </div>
+  <div class="frame-wrap">
+    <div class="frame-host" id="frameHost"></div>
+    <div class="stmark">ST</div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ============================================================
+     CONFIG — change these 3 values to your own GitHub repo
+     ============================================================ */
+  var CONFIG = {
+    user:   "YOUR_GITHUB_USER",
+    repo:   "sigma-town",
+    branch: "main"
+  };
+
+  var CDN = "https://cdn.jsdelivr.net/gh/" +
+            CONFIG.user + "/" + CONFIG.repo + "@" + CONFIG.branch + "/";
+
+  /* ============================================================
+     GAME LIST
+     file  = path inside the repo (spaces must be %20)
+     thumb = path inside the repo, OR a full https:// URL
+     ============================================================ */
+  var GAMES = [
+    {
+      id:    "drive-mad",
+      file:  "cldrivemad%20(1).html",
+      thumb: "https://drive-mad.co/wp-content/uploads/2025/07/drive-Mad.webp"
+    }
+  ];
+
+  /* ---------------- elements ---------------- */
+  var grid      = document.getElementById("grid");
+  var player    = document.getElementById("player");
+  var frameHost = document.getElementById("frameHost");
+  var back      = document.getElementById("back");
+
+  /* ---------------- storage helpers ---------------- */
+  var FAV_KEY  = "sigma-town-favs";
+  var LAST_KEY = "sigma-town-last";
+
+  var favs = new Set();
+  try { favs = new Set(JSON.parse(localStorage.getItem(FAV_KEY) || "[]")); } catch (e) {}
+
+  function saveFavs() {
+    try { localStorage.setItem(FAV_KEY, JSON.stringify(Array.from(favs))); } catch (e) {}
+  }
+  function saveLast(id) {
+    try { localStorage.setItem(LAST_KEY, id); } catch (e) {}
+  }
+  function loadLast() {
+    try { return localStorage.getItem(LAST_KEY) || ""; } catch (e) { return ""; }
+  }
+
+  /* ---------------- resolve urls ---------------- */
+  function resolve(path) {
+    return /^https?:\/\//i.test(path) ? path : CDN + path;
+  }
+
+  /* ---------------- build the cards once ---------------- */
+  var html = "";
+  for (var i = 0; i < GAMES.length; i++) {
+    var g = GAMES[i];
+    html +=
+      '<article class="card" data-id="' + g.id + '" tabindex="0" role="button"' +
+      ' aria-label="Play game">' +
+        '<div class="thumb">' +
+          '<img src="' + resolve(g.thumb) + '" alt="" loading="lazy" decoding="async"' +
+          ' width="400" height="400" referrerpolicy="no-referrer"' +
+          ' onerror="this.style.opacity=0">' +
+          '<button class="star' + (favs.has(g.id) ? " on" : "") + '" data-star="' + g.id + '"' +
+          ' type="button" title="Star" aria-label="Star game">★</button>' +
+        '</div>' +
+      '</article>';
+  }
+  grid.innerHTML = html;
+
+  /* ---------------- open / close a game ---------------- */
+  function byId(id) {
+    for (var i = 0; i < GAMES.length; i++) {
+      if (GAMES[i].id === id) return GAMES[i];
+    }
+    return null;
+  }
+
+  function openGame(id, remember) {
+    var g = byId(id);
+    if (!g) return;
+
+    player.hidden = false;
+    document.body.classList.add("playing");
+
+    /* iframe is created ONLY now — nothing loads until you press play,
+       so the front page stays fast no matter how many games you add. */
+    var f = document.createElement("iframe");
+    f.src = resolve(g.file);
+    f.title = "Game";
+    f.setAttribute("allow", "autoplay; fullscreen; gamepad; clipboard-write; encrypted-media");
+    f.setAttribute("allowfullscreen", "");
+    f.setAttribute("referrerpolicy", "no-referrer");
+
+    frameHost.innerHTML = "";
+    frameHost.appendChild(f);
+
+    setHash("#" + id);
+    if (remember !== false) saveLast(id);   /* ← progress: remembers what you were playing */
+  }
+
+  function closeGame() {
+    frameHost.innerHTML = "";      /* destroys the iframe → stops audio + frees RAM */
+    player.hidden = true;
+    document.body.classList.remove("playing");
+    setHash("");                   /* last game stays saved so refresh resumes it */
+  }
+
+  function setHash(h) {
+    try {
+      history.replaceState(null, "", location.pathname + location.search + h);
+    } catch (e) { /* file:// or sandboxed — ignore */ }
+  }
+
+  /* ---------------- clicks ---------------- */
+  grid.addEventListener("click", function (e) {
+    var star = e.target.closest("[data-star]");
+    if (star) {
+      e.stopPropagation();
+      var id = star.getAttribute("data-star");
+      if (favs.has(id)) { favs.delete(id); star.classList.remove("on"); }
+      else              { favs.add(id);    star.classList.add("on");    }
+      saveFavs();
+      return;
+    }
+    var card = e.target.closest(".card");
+    if (card) openGame(card.getAttribute("data-id"));
+  });
+
+  grid.addEventListener("keydown", function (e) {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    var card = e.target.closest(".card");
+    if (card) { e.preventDefault(); openGame(card.getAttribute("data-id")); }
+  });
+
+  back.addEventListener("click", closeGame);
+
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && !player.hidden) closeGame();
+  });
+
+  /* ---------------- resume on load ----------------
+     priority: URL hash  →  last played game
+     (don't re-save it, it's already saved)            */
+  var start = location.hash.slice(1) || loadLast();
+  if (start) openGame(start, false);
+})();
+</script>
+</body>
+</html>
